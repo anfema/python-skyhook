@@ -1,3 +1,4 @@
+import binascii
 import datetime
 import struct
 from Crypto.Cipher import AES
@@ -34,13 +35,14 @@ class SkyhookResponse:
 			raise RuntimeError('No response data set')
 
 		self.data = data
-		self.key = key
+		self.key = binascii.unhexlify(key)
 		self.status = 'Undefined'
 		self.lat = None
 		self.lon = None
 		self.date = None
 		self.deserialize()
 
+	@property
 	def coordinate(self):
 		"""
 		Fetch coordinate
@@ -62,27 +64,30 @@ class SkyhookResponse:
 		"""
 
 		# unpack header
-		(version, payload_len, IV) = struct.unpack('B>h16s', self.data)
-		payload = self.data[19:]
+		(version, _, payload_len, IV) = struct.unpack('<BBh16s', self.data[:20])
+		payload = self.data[20:]
 
-		if len(payload) != payload_len or len(payload) % 16 != 0:
-			raise InvalidDataError('Payload length invalid')
+		if len(payload) != payload_len + 2 or (len(payload) - 2) % 16 != 0:
+			raise InvalidDataError('Payload length invalid: {} != {}'.format(len(payload), payload_len + 2))
 
 		# AES decrypt
 		decryptor = AES.new(self.key, AES.MODE_CBC, IV=IV)
-		payload = decryptor.decrypt(payload)
+		decrypted_payload = decryptor.decrypt(payload[:-2])
 
-		# verify checksum
-		if fletcher16(payload[:-2]) != (payload[-2] << 8) + payload[-1]:
-			raise InvalidDataError('Checksum does not match')
+		# verify checksum (this seems inconsistent to request payload checksumming as it includes the header)
+		crcp = fletcher16(self.data[:20] + decrypted_payload)
+		crc = (payload[-1] << 8) + payload[-2]
 
-		(serverVersion, timestamp, payloadType) = struct.unpack('B6sB')
+		if crcp != crc:
+			raise InvalidDataError('Checksum does not match: {} != {}'.format(crcp, crc))
+
+		(serverVersion, timestamp, payloadType) = struct.unpack('<B6sB', decrypted_payload[:8])
 
 		# decode timestamp
 		dt = 0
-		for char in timestamp:
+		for char in timestamp[::-1]:
 			dt = (dt << 8) + char
-		self.date = datetime.datetime.fromtimestamp(dt)
+		self.date = datetime.datetime.fromtimestamp(dt/1000)
 
 		# determine what is in the payload
 		if payloadType == 255:  # PAYLOAD_ERROR
@@ -99,10 +104,10 @@ class SkyhookResponse:
 			return
 
 		if payloadType == 1:  # LOCATION_RQ
-			self.decodeLocationRQ(payload[8:-2])
+			self.decodeLocationRQ(decrypted_payload[8:])
 
 		if payloadType == 2:  # LOCATION_RQ_ADDR
-			self.decodeLocationRQAddr(payload[8:-2])
+			self.decodeLocationRQAddr(decrypted_payload[8:])
 
 	def decodeLocationRQ(self, data):
 		"""
@@ -110,19 +115,24 @@ class SkyhookResponse:
 
 		:param data: data to decode
 		"""
-		if data[0] != 0x02:  # DATA_TYPE_GPS
+		if data[0] != 0x08:  # DATA_TYPE_LAT_LON
 			self.status = 'Invalid data'
 			return
 
-		(lat, lon, hpe) = struct.unpack_from(
-			'ddf',
-			data,
-			offset=2
+		if data[1] != 24: # size field
+			self.status = 'Invalid data'
+			return
+
+		(lat, lon, hpe, dist) = struct.unpack(
+			'<ddff',
+			data[2:26],
 		)
 
 		self.status = 'Ok'
 		self.lat = lat
 		self.lon = lon
+		self.hpe = hpe
+		self.dist = dist
 
 	def decodeLocationRQAddr(self, data):
 		"""

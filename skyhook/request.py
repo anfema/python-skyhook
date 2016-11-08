@@ -29,6 +29,8 @@ class SkyhookRequest:
 
 		self.version = __client_version__
 		self.mac = binascii.unhexlify('CAFEBABECAFE')  # TODO: use actual mac
+		self.ipv4 = b'\x00' * 4  # TODO: use actual IP
+		self.ipv6 = b'\x00' * 16 # TODO: use actual IP
 		self.payloadType = 1  # LOCATION_RQ
 		self.aps = []
 		self.cellTowers = []
@@ -50,17 +52,19 @@ class SkyhookRequest:
 			gps=', GPS: {lat}, {lon}'.format(lat=self.gpsCoordinate['lat'], lon=self.gpsCoordinate['lon']) if self.gpsCoordinate else ''
 		)
 
-	def addAccessPoint(self, BSSID, rssi):
+	def addAccessPoint(self, BSSID, rssi, band='unknown'):
 		"""
 		Add WIFI station to search request
 
 		:param BSSID: WIFI BSSID, hex encoded without double colons
 		:param rssi: signal strength in dBm
+		:param band: WIFI band, one of 'unknown', '2.4', 5.0'
 		"""
 
 		self.aps.append({
 			'bssid': binascii.unhexlify(BSSID),
-			'rssi': rssi
+			'rssi': rssi,
+			'band': band
 		})
 
 	def addGSMCellTower(self, lac, cellID, rssi, mcc=None, mnc=None):
@@ -152,26 +156,29 @@ class SkyhookRequest:
 		IV = self.makeIV()
 
 		# protocol version
-		packet = bytearray(b'\x01')
-
-		# user id
-		packet.extend(self.userID.to_bytes(4, byteorder='big'))
+		packet = bytearray(b'\x01\x00')
 
 		# Build payload
 		payload = self.serializePayload()
 
 		# AES encrypt
 		encryptor = AES.new(self.key, AES.MODE_CBC, IV=IV)
-		payload = encryptor.encrypt(bytes(payload))
+		encrypted_payload = encryptor.encrypt(bytes(payload))
 
 		# payload length
-		packet.extend(len(payload).to_bytes(2, byteorder='big'))
+		packet.extend(len(payload).to_bytes(2, byteorder='little'))
+
+		# user id
+		packet.extend(self.userID.to_bytes(4, byteorder='little'))
 
 		# IV
 		packet.extend(IV)
 
 		# payload
-		packet.extend(payload)
+		packet.extend(encrypted_payload)
+
+		# checksum
+		packet.extend(fletcher16(payload).to_bytes(2, byteorder='little'))
 
 		return packet
 
@@ -198,13 +205,24 @@ class SkyhookRequest:
 		payload = bytearray()
 
 		# client sw version
-		payload.extend(self.version.to_bytes(1, byteorder='big'))
+		payload.extend(self.version.to_bytes(1, byteorder='little'))
 
-		# client mac
-		payload.extend(self.mac)
+		# timestamp (just set to 0)
+		payload.extend(b'\x00' * 6)
 
 		# LOCATION_RQ
-		payload.extend(self.payloadType.to_bytes(1, byteorder='big'))
+		payload.extend(self.payloadType.to_bytes(1, byteorder='little'))
+
+		# MAC address
+		payload.extend(self.serializeMAC())
+
+		# IPv4 Address
+		if self.ipv4:
+			payload.extend(self.serializeIPv4())
+
+		# IPv6 Address
+		if self.ipv6:
+			payload.extend(self.serializeIPv6())
 
 		# AP
 		if len(self.aps) > 0:
@@ -223,14 +241,29 @@ class SkyhookRequest:
 			payload.extend(self.serializeGPS())
 
 		# pad
-		if not (len(payload) + 2) % 16 == 0:
-			padding = 16 - ((len(payload) + 2) % 16)
+		if not len(payload) % 16 == 0:
+			padding = 16 - (len(payload) % 16)
 			payload.extend(padding * b'\x00')
 
-		# checksum
-		payload.extend(fletcher16(payload).to_bytes(2, byteorder='big'))
-
 		return payload
+
+	def serializeMAC(self):
+		buffer = bytearray(b'\x16') # DATA_TYPE_MAC
+		buffer.append(1) # one mac address
+		buffer.extend(self.mac)
+		return buffer
+
+	def serializeIPv4(self):
+		buffer = bytearray(b'\x14')  # DATA_TYPE_IPv4
+		buffer.append(1)  # one mac IPv4 address
+		buffer.extend(self.ipv4)
+		return buffer
+
+	def serializeIPv6(self):
+		buffer = bytearray(b'\x15')  # DATA_TYPE_IPv6
+		buffer.append(1)  # one mac IPv4 address
+		buffer.extend(self.ipv6)
+		return buffer
 
 	def serializeAP(self):
 		"""
@@ -240,13 +273,19 @@ class SkyhookRequest:
 		"""
 
 		buffer = bytearray(b'\x01')  # DATA_TYPE_AP
-		buffer.extend(len(self.aps).to_bytes(1, byteorder='big'))
+		buffer.extend(len(self.aps).to_bytes(1, byteorder='little'))
 		for ap in self.aps:
+			band = 0  # unknown
+			if ap['band'] == '2.4':
+				band = 3
+			elif ap['band'] == '5.0':
+				band = 5
 			buffer.extend(
 				struct.pack(
-					'6sb',
+					'6sbB',
 					ap['bssid'],
-					ap['rssi']
+					ap['rssi'],
+					band
 				)
 			)
 		return buffer
@@ -259,16 +298,17 @@ class SkyhookRequest:
 		"""
 
 		buffer = bytearray(b'\x07')  # DATA_TYPE_BLE
-		buffer.extend(len(self.ble).to_bytes(1, byteorder='big'))
+		buffer.extend(len(self.ble).to_bytes(1, byteorder='little'))
 		for bta in self.ble:
 			buffer.extend(
 				struct.pack(
-					'HH6s16sb',
-					bta['minor'],
+					'HH6s16sbB',
 					bta['major'],
+					bta['minor'],
 					bta['mac'],
 					bta['uuid'],
-					bta['rssi']
+					bta['rssi'],
+					0  # padding
 				)
 			)
 		return buffer
@@ -281,17 +321,18 @@ class SkyhookRequest:
 		"""
 
 		buffer = bytearray(b'\x03')  # DATA_TYPE_GSM
-		buffer.extend(len(self.cellTowers).to_bytes(1, byteorder='big'))
+		buffer.extend(len(self.cellTowers).to_bytes(1, byteorder='little'))
 		for tower in self.cellTowers:
 			buffer.extend(
 				struct.pack(
-					'IIHHHb',
+					'IIHHHbB',
 					tower['cellID'],
 					0,  # age
 					tower['mcc'],
 					tower['mnc'],
 					tower['lac'],
-					tower['rssi']
+					tower['rssi'],
+					0  # padding
 				)
 			)
 		return buffer
@@ -307,15 +348,18 @@ class SkyhookRequest:
 		buffer.extend(b'\x01')  # exactly one coordinate
 		buffer.extend(
 			struct.pack(
-				'ddffIfBB',
+				'ddffffIBBBB',
 				self.gpsCoordinate['lat'],
 				self.gpsCoordinate['lon'],
+				0,  # hdop
 				self.gpsCoordinate['alt'],
 				self.gpsCoordinate['hpe'],
-				0,  # age
 				self.gpsCoordinate['speed'],
+				0,  # age
 				self.gpsCoordinate['nsat'],
 				1,  # fix
+				0,  # padding
+				0,  # padding
 			)
 		)
 		return buffer
