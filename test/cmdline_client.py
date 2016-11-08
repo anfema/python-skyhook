@@ -92,4 +92,4 @@ response = connection.performRequest(request)
 if response.status != 'Ok':
 	print('Error:', response.status)
 else:
-	print('Response: ', response.coordinate())
+	print('Response: ', response.coordinate, 'deviation', response.hpe, 'meters')
