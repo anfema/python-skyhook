@@ -24,7 +24,7 @@ Python example::
 	rssi = -60
 
 	request = skyhook.SkyhookRequest()
-	request.addAccessPoint(bssid, rssi)
+	request.addAccessPoint(bssid.replace(':', ''), rssi)
 
 	connection = skyhook.SkyhookConnection(key=key, userID=userID)
 	response = connection.performRequest(request)
@@ -32,7 +32,7 @@ Python example::
 	if response.status != 'Ok':
 		print('Error:', response.status)
 	else:
-		print('Response: ', response.coordinate())
+		print('Response: ', response.coordinate)
 
 Command line client
 -------------------
