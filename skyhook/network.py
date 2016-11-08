@@ -11,7 +11,7 @@ class SkyhookConnection:
 	and user id ``userID`` while initializing this
 	"""
 
-	def __init__(self, server='elg.skyhookwireless.com', port=9755, key=None, userID=None):
+	def __init__(self, server='elg.skyhook.com', port=9755, key=None, userID=None):
 		self.socket = create_connection((server, port))
 		self.socket.setblocking(1)
 		self.key = key
