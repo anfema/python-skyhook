@@ -1,21 +1,33 @@
-import binascii
 import datetime
 import struct
 from Crypto.Cipher import AES
 
-from skyhook import __client_version__
 from .util import fletcher16
 
 class InvalidDataError(RuntimeError):
+	"""
+	Error class raised when the payload received from the Skyhook server is somehow corrupt
+	"""
+
 	pass
 
 class SkyhookResponse:
+	"""
+	Response deserializer class
+	"""
 
 	#
 	# Public API
 	#
 
 	def __init__(self, data, key):
+		"""
+		Initialize the response class with data
+
+		:param data: the data from the Skyhook response
+		:param key: the decryption key from the API console
+		"""
+
 		if not key:
 			raise RuntimeError('No encryption key set')
 		if not data:
@@ -30,13 +42,25 @@ class SkyhookResponse:
 		self.deserialize()
 
 	def coordinate(self):
-		return (self.lat, self.lon)
+		"""
+		Fetch coordinate
+
+		:return: Coordinate tuple (lat,long) if payload was not an error, else ``None``
+		"""
+		if self.status == 'Ok':
+			return (self.lat, self.lon)
+		else:
+			return None
 
 	#
 	# Internal
 	#
 
 	def deserialize(self):
+		"""
+		Deserialize a response
+		"""
+
 		# unpack header
 		(version, payload_len, IV) = struct.unpack('B>h16s', self.data)
 		payload = self.data[19:]
@@ -81,6 +105,11 @@ class SkyhookResponse:
 			self.decodeLocationRQAddr(payload[8:-2])
 
 	def decodeLocationRQ(self, data):
+		"""
+		Decode a Location response packet
+
+		:param data: data to decode
+		"""
 		if data[0] != 0x02:  # DATA_TYPE_GPS
 			self.status = 'Invalid data'
 			return
@@ -96,5 +125,11 @@ class SkyhookResponse:
 		self.lon = lon
 
 	def decodeLocationRQAddr(self, data):
+		"""
+		Decode a Location with address response packet
+
+		:param data: data to decode
+		"""
+
 		# TODO: Implement full location response
 		pass

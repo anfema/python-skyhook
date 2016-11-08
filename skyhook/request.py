@@ -8,12 +8,25 @@ from .util import fletcher16
 
 
 class SkyhookRequest:
+	"""
+	A request object for the Skyhook API.
+	This class does all encoding and encryption that is needed.
+	"""
 
 	#
 	# Public API
 	#
 
 	def __init__(self, key=None, userID=None, mcc=None, mnc=None):
+		"""
+		Initialize an empty request
+
+		:param key: encryption key, may be skipped if set in ``SkyhookConnection``
+		:param userID:  user ID, may be skipped if set in ``SkyhookConnection``
+		:param mcc: Mobile country code of the GSM Network, optional, shortcut if you want to skip it on adding Celltowers
+		:param mnc: Mobile network code of the GSM Network, optional, shortcut if you want to skip it on adding Celltowers
+		"""
+
 		self.version = __client_version__
 		self.mac = binascii.unhexlify('CAFEBABECAFE')  # TODO: use actual mac
 		self.payloadType = 1  # LOCATION_RQ
@@ -38,12 +51,29 @@ class SkyhookRequest:
 		)
 
 	def addAccessPoint(self, BSSID, rssi):
+		"""
+		Add WIFI station to search request
+
+		:param BSSID: WIFI BSSID, hex encoded without double colons
+		:param rssi: signal strength in dBm
+		"""
+
 		self.aps.append({
 			'bssid': binascii.unhexlify(BSSID),
 			'rssi': rssi
 		})
 
 	def addGSMCellTower(self, lac, cellID, rssi, mcc=None, mnc=None):
+		"""
+		Add GSM Cell tower to search request
+
+		:param lac: location area code
+		:param cellID: celltower ID
+		:param rssi: signal strength in dBm
+		:param mcc: mobile country code, may be skipped if set on request initialization
+		:param mnc: mobile network code, may be skipped if set on request initialization
+		"""
+
 		if not self.mcc and not mcc:
 			raise RuntimeError('Either set mcc on initialization or provide it when adding a cell tower')
 		if not self.mnc and not mnc:
@@ -62,15 +92,36 @@ class SkyhookRequest:
 		})
 
 	def addBluetoothMarker(self, major, minor, MAC, uuid, rssi):
+		"""
+		Add Bluetooth beacon
+
+		:param major: major number
+		:param minor: minor number
+		:param MAC: MAC address, hex without double colons
+		:param uuid: uuid, hex without hyphens
+		:param rssi: signal strength in dBm
+		"""
+
 		self.ble.append({
 			'major': major,
 			'minor': minor,
 			'mac': binascii.unhexlify(MAC),
-			'uuid': uuid,
+			'uuid': binascii.unhexlify(uuid),
 			'rssi': rssi
 		})
 
 	def setGPSCoordinate(self, lat, lon, numSatelites, altitude=0, speed=0, hpe=0):
+		"""
+		Add a GPS coordinate to help Skyhook make their DB better
+
+		:param lat: latitude, positive for South
+		:param lon: longitude, positive for East
+		:param numSatelites: number of visible satelites
+		:param altitude: altitude above null, optional
+		:param speed: speed, optional
+		:param hpe: precision in meters, optional
+		"""
+
 		self.gpsCoordinate = {
 			'lat': lat,
 			'lon': lon,
@@ -81,6 +132,13 @@ class SkyhookRequest:
 		}
 
 	def serialize(self, key=None, userID=None):
+		"""
+		Serialize a request into it's binary form
+
+		:param key: encryption key, optional if set on initialization
+		:param userID: user ID, optional if set on initialization
+		"""
+
 		if key:
 			self.key = binascii.unhexlify(key)
 		if userID:
@@ -122,9 +180,21 @@ class SkyhookRequest:
 	#
 
 	def makeIV(self):
+		"""
+		Make random IV for AES encryption
+
+		:return: 16 random bytes for IV
+		"""
+
 		return Random.new().read(AES.block_size)
 
 	def serializePayload(self):
+		"""
+		Serialize the payload part of the request packet
+
+		:return: Serialized payload as byte array
+		"""
+
 		payload = bytearray()
 
 		# client sw version
@@ -163,6 +233,12 @@ class SkyhookRequest:
 		return payload
 
 	def serializeAP(self):
+		"""
+		Serialize WIFI APs for payload
+
+		:return: Serialized WIFI APs as byte array
+		"""
+
 		buffer = bytearray(b'\x01')  # DATA_TYPE_AP
 		buffer.extend(len(self.aps).to_bytes(1, byteorder='big'))
 		for ap in self.aps:
@@ -176,6 +252,12 @@ class SkyhookRequest:
 		return buffer
 
 	def serializeBLE(self):
+		"""
+		Serialize Bluetooth beacons for payload
+
+		:return: Serialized Bluetooth beacons as byte array
+		"""
+
 		buffer = bytearray(b'\x07')  # DATA_TYPE_BLE
 		buffer.extend(len(self.ble).to_bytes(1, byteorder='big'))
 		for bta in self.ble:
@@ -192,6 +274,12 @@ class SkyhookRequest:
 		return buffer
 
 	def serializeCellTower(self):
+		"""
+		Serialize cell tower data for payload
+
+		:return: Serialized cell tower payload as byte array
+		"""
+
 		buffer = bytearray(b'\x03')  # DATA_TYPE_GSM
 		buffer.extend(len(self.cellTowers).to_bytes(1, byteorder='big'))
 		for tower in self.cellTowers:
@@ -209,6 +297,12 @@ class SkyhookRequest:
 		return buffer
 
 	def serializeGPS(self):
+		"""
+		Serialize the GPS coordinate for payload
+
+		:return: Serialized GPS coordinate as byte array
+		"""
+
 		buffer = bytearray(b'\x02')  # DATA_TYPE_GPS
 		buffer.extend(b'\x01')  # exactly one coordinate
 		buffer.extend(

@@ -1,14 +1,17 @@
-# Skyhook ELG client for python
+Skyhook ELG client for python
+=============================
 
 This implements the Skyhook ELG binary protocol in python
 
-## Installation
+Installation
+------------
 
 Just install with ``pip``::
 
 	pip install python-skyhook
 
-## Usage
+Usage
+-----
 
 Python example::
 
@@ -31,7 +34,8 @@ Python example::
 	else:
 		print('Response: ', response.coordinate())
 
-## Command line client
+Command line client
+-------------------
 
 In the ``test`` directory you'll find a command line client to test if everything works::
 
