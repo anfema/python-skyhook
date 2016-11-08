@@ -16,6 +16,11 @@ class SkyhookResponse:
 	#
 
 	def __init__(self, data, key):
+		if not key:
+			raise RuntimeError('No encryption key set')
+		if not data:
+			raise RuntimeError('No response data set')
+
 		self.data = data
 		self.key = key
 		self.status = 'Undefined'
@@ -86,6 +91,7 @@ class SkyhookResponse:
 			offset=2
 		)
 
+		self.status = 'Ok'
 		self.lat = lat
 		self.lon = lon
 
