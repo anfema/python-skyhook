@@ -90,23 +90,26 @@ class SkyhookResponse:
 		self.date = datetime.datetime.fromtimestamp(dt/1000)
 
 		# determine what is in the payload
-		if payloadType == 255:  # PAYLOAD_ERROR
-			self.status = 'Binary format error'
+		if payloadType == 10:  # LOCATION_RQ_ERROR
+			self.status = 'Request error'
 			return
-		if payloadType == 254:  # PAYLOAD_API_ERROR
-			self.status = 'API Error'
+		if payloadType == 11:  # LOCATION_GATEWAY_ERROR
+			self.status = 'ELG Gateway error'
 			return
-		if payloadType == 253:  # SERVER_ERROR
-			self.status = 'Server error'
+		if payloadType == 12:  # LOCATION_API_ERROR
+			self.status = 'API error'
 			return
-		if payloadType == 252:  # LOCATION_RQ_ERROR
-			self.status = 'Location RQ error'
+		if payloadType == 13:  # LOCATION_UNKNOWN
+			self.status = 'Unknown error'
+			return
+		if payloadType == 20:  # LOCATION_UNABLE_TO_DETERMINE
+			self.status = 'Insufficient data to calculate position'
 			return
 
-		if payloadType == 1:  # LOCATION_RQ
+		if payloadType == 1:  # LOCATION_RQ_SUCCESS
 			self.decodeLocationRQ(decrypted_payload[8:])
 
-		if payloadType == 2:  # LOCATION_RQ_ADDR
+		if payloadType == 2:  # LOCATION_RQ_ADDR_SUCCESS
 			self.decodeLocationRQAddr(decrypted_payload[8:])
 
 	def decodeLocationRQ(self, data):
