@@ -178,7 +178,8 @@ class SkyhookRequest:
 		packet.extend(encrypted_payload)
 
 		# checksum
-		packet.extend(fletcher16(payload).to_bytes(2, byteorder='little'))
+		crc = fletcher16(payload)
+		packet.extend(crc.to_bytes(2, byteorder='little'))
 
 		return packet
 
